@@ -24,16 +24,11 @@ namespace CrossSolar.Controllers
         }
 
         // GET panel/XXXX1111YYYY2222/analytics
-        [HttpGet("{banelId}/[controller]")]
-        public async Task<IActionResult> Get([FromRoute] string panelId)
+        [HttpGet("{serial}/[controller]")]
+        public async Task<IActionResult> Get([FromRoute] string serial)
         {
-            var panel = await _panelRepository.Query()
-                .FirstOrDefaultAsync(x => x.Serial.Equals(panelId, StringComparison.CurrentCultureIgnoreCase));
-
-            if (panel == null) return NotFound();
-
-            var analytics = await _analyticsRepository.Query()
-                .Where(x => x.PanelId.Equals(panelId, StringComparison.CurrentCultureIgnoreCase)).ToListAsync();
+            var analytics = _analyticsRepository.Query()
+                .Where(x => x.PanelId.Equals(serial)).ToList();
 
             var result = new OneHourElectricityListModel
             {
@@ -49,10 +44,36 @@ namespace CrossSolar.Controllers
         }
 
         // GET panel/XXXX1111YYYY2222/analytics/day
-        [HttpGet("{panelId}/[controller]/day")]
-        public async Task<IActionResult> DayResults([FromRoute] string panelId)
+        [HttpGet("{serial}/[controller]/day")]
+        public async Task<IActionResult> DayResults([FromRoute] string serial)
         {
             var result = new List<OneDayElectricityModel>();
+
+            var analytics = _analyticsRepository.Query()
+                .Where(x => x.PanelId.Equals(serial)).OrderBy(x => x.DateTime).ToList();
+
+            if (analytics.Count() < 0)
+                return BadRequest();
+
+            var date = analytics.Min(x => x.DateTime);
+
+            var analyticsForDay = analytics.Where(x => x.DateTime.DayOfYear == date.DayOfYear).ToList();
+
+            while(analyticsForDay.Count() > 0)
+            {
+                if (date.DayOfYear == DateTime.Now.DayOfYear)
+                    break;
+                result.Add(new OneDayElectricityModel()
+                {
+                    Average = analyticsForDay.Average(x => x.KiloWatt),
+                    Maximum = analyticsForDay.Max(x => x.KiloWatt),
+                    Minimum = analyticsForDay.Min(x => x.KiloWatt),
+                    Sum = analytics.Sum(x => x.KiloWatt),
+                    DateTime = date
+                });
+                date = date.AddDays(1);
+                analyticsForDay = analytics.Where(x => x.DateTime.DayOfYear == date.DayOfYear).ToList();
+            }
 
             return Ok(result);
         }
